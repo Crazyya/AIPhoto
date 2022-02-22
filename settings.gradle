@@ -1,0 +1,28 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/jcenter' }
+        maven { url 'https://kotlin.bintray.com/kotlinx' }
+        maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
+        maven { url 'https://maven.google.com' }
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/jcenter' }
+        maven { url 'https://kotlin.bintray.com/kotlinx' }
+        maven { url 'https://download.01.org/crosswalk/releases/crosswalk/android/maven2' }
+        maven { url 'https://maven.google.com' }
+    }
+}
+rootProject.name = "AIPhoto"
+include ':app'

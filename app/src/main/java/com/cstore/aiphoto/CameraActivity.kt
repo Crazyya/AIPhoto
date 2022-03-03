@@ -2,13 +2,17 @@ package com.cstore.aiphoto
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -59,6 +63,18 @@ class CameraActivity : AppCompatActivity() {
                 val t = pickText + "拍照"
                 viewBinding.pickState.text = t
                 takePhoto()
+            } else if (it == "update") {
+                val t = connText + "下载更新中"
+                viewBinding.connState.text = t
+                vm.updateApk()
+            }
+        }
+        vm.updateState.observe({ lifecycle }) {
+            Log.e("Act", "Start Install APK!")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                installPermission()
+            } else {
+                FileUtil.installApk(DownloadUtil.apkFilePath, "com.cstore.aiphoto.fileprovider")
             }
         }
         vm.sendState.observe({ lifecycle }) {
@@ -99,8 +115,25 @@ class CameraActivity : AppCompatActivity() {
             }
             permLauncher.launch(Manifest.permission.CAMERA)
         } else {
-            // If permissions have already been granted, proceed
             vm.connectSocket()
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private val registLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        installPermission()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun installPermission() {
+        val hip = this.packageManager.canRequestPackageInstalls()
+        if (hip) {
+            FileUtil.installApk(DownloadUtil.apkFilePath, "com.cstore.aiphoto.fileprovider")
+        } else {
+            val packageUri = Uri.fromParts("package", packageName, null)
+            val i = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, packageUri)
+            registLauncher.launch(i)
+            Toast.makeText(this, "请开启安装未知应用权限", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -171,7 +204,7 @@ class CameraActivity : AppCompatActivity() {
             }
         }
 
-        private val PERMISSIONS_REQUIRED = arrayOf(Manifest.permission.CAMERA)
+        private val PERMISSIONS_REQUIRED = arrayOf(Manifest.permission.CAMERA, Manifest.permission.REQUEST_INSTALL_PACKAGES)
         fun hasPermissions(context: Context) = PERMISSIONS_REQUIRED.all {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
         }

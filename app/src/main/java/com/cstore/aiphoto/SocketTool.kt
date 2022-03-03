@@ -20,7 +20,7 @@ import java.net.URI
 class SocketTool(private var scope: CoroutineScope) {
     private val TRY_COUNT = 5
     private val CONNECT_TIME_OUT = 1500
-    private val HOST = "192.168.7.88"
+    private val HOST = "192.168.3.88"
     private val PORT = 52828
     private val FILE_PORT = 52827
     private lateinit var job: Job
@@ -48,23 +48,21 @@ class SocketTool(private var scope: CoroutineScope) {
         val os = socket.getOutputStream()
         val ins = socket.getInputStream()
         try {
+            //发一次确认通了就行了
+            os.write("hi".toByteArray())
+            os.flush()
             do {
                 var text: String? = null
-                //发送心跳包,直到接受到开始指令,之后就是等待拍照发送完成继续心跳包
                 while (text.isNullOrEmpty()) {
-                    os.write("hi".toByteArray())
-                    os.flush()
                     //无限，我自己写的服务端，要不断开，要不返回结果
                     text = BufferedReader(InputStreamReader(ins, Charsets.UTF_8)).readLine()
-                    Log.e("SocketTool", "接受:$text")
                 }
-                if (text == "start") {
+                if (!text.isNullOrEmpty()) {
                     state.postValue(text)
                     //重置
                     delay(500)
                     state.postValue("")
                 }
-                delay(500)
             } while (!job.isCancelled && job.isActive)
         } catch (e: SocketTimeoutException) {
             Log.e("SocketTool", "连接超时,准备重试:${tryCount}", e)
@@ -96,8 +94,8 @@ class SocketTool(private var scope: CoroutineScope) {
         }
         val fileOs = fileSocket.getOutputStream()
         val fileIns = fileSocket.getInputStream()
+        val file = uri.toFile()
         try {
-            val file = uri.toFile()
             val fileByte = file.readBytes()
             val fileName = file.name
             ByteArrayOutputStream().use { bas ->
@@ -130,6 +128,7 @@ class SocketTool(private var scope: CoroutineScope) {
             fileOs.close()
             fileIns.close()
             fileSocket.close()
+            file.delete()
         }
         true
     }

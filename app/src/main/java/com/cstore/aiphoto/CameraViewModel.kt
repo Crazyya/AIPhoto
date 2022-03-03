@@ -23,6 +23,8 @@ class CameraViewModel : ViewModel() {
     //Socket返回的结果
     val socketMsg = MutableLiveData<String>()
 
+    val updateState = MutableLiveData<Boolean>()
+
     //待发送数据
     private val waitSendData = LinkedList<Uri>()
 
@@ -66,5 +68,22 @@ class CameraViewModel : ViewModel() {
                 Log.e("CameraViewModel", "发送异常", e)
             }
         } while (!job.isCancelled && job.isActive)
+    }
+
+    fun updateApk() {
+        viewModelScope.launch {
+            try {
+                val download = DownloadUtil({
+                                                Log.e("CameraViewModel", "下载完成")
+                                                updateState.value = true
+                                            }, {
+                                                Log.e("CameraViewModel", it)
+                                            })
+                download.downloadAPK()
+            } catch (e: Exception) {
+                Log.e("CameraViewModel", "安装异常", e)
+            }
+        }
+
     }
 }

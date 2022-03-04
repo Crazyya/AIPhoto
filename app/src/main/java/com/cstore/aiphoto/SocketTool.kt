@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.net.toFile
 import androidx.lifecycle.MutableLiveData
+import com.cstore.aiphoto.DownloadUtil.Companion.filePath
 import kotlinx.coroutines.*
 import java.io.*
 import java.net.InetSocketAddress
@@ -20,7 +21,7 @@ import java.net.URI
 class SocketTool(private var scope: CoroutineScope) {
     private val TRY_COUNT = 5
     private val CONNECT_TIME_OUT = 1500
-    private val HOST = "192.168.3.88"
+    private val HOST = "192.168.7.88"
     private val PORT = 52828
     private val FILE_PORT = 52827
     private lateinit var job: Job
@@ -57,7 +58,27 @@ class SocketTool(private var scope: CoroutineScope) {
                     //无限，我自己写的服务端，要不断开，要不返回结果
                     text = BufferedReader(InputStreamReader(ins, Charsets.UTF_8)).readLine()
                 }
-                if (!text.isNullOrEmpty()) {
+                if ("apkfile" in text) {
+                    val fileSize = text.split(" ")[1].toLong()
+                    val fos = FileOutputStream(filePath)
+                    val bufSize = 1024
+                    val buf = ByteArray(bufSize)
+                    val bis = BufferedInputStream(ins)
+                    var len: Int
+                    var totalSize = 0
+                    Log.e("SocketTool", "开始接收")
+                    while ((bis.read(buf)).also { len = it } != -1) {
+                        fos.write(buf, 0, len)
+                        totalSize += len
+                        if (fileSize <= totalSize) {
+                            Log.e("SocketTool", "接收长度满足，结束")
+                            break
+                        }
+                    }
+                    fos.close()
+                    Log.e("SocketTool", "接收完毕")
+                    state.postValue("update")
+                } else if (!text.isNullOrEmpty()) {
                     state.postValue(text)
                     //重置
                     delay(500)

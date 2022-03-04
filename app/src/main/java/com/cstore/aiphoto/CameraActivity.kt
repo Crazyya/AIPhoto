@@ -64,9 +64,11 @@ class CameraActivity : AppCompatActivity() {
                 viewBinding.pickState.text = t
                 takePhoto()
             } else if (it == "update") {
-                val t = connText + "下载更新中"
-                viewBinding.connState.text = t
-                vm.updateApk()
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    installPermission()
+                } else {
+                    FileUtil.installApk(DownloadUtil.apkFilePath, "com.cstore.aiphoto.fileprovider")
+                }
             }
         }
         vm.updateState.observe({ lifecycle }) {

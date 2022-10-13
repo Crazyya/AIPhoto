@@ -1,8 +1,8 @@
 package com.cstore.aiphoto
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.graphics.*
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.core.net.toFile
 import androidx.lifecycle.MutableLiveData
@@ -12,7 +12,6 @@ import java.io.*
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketTimeoutException
-import java.net.URI
 
 /**
  * Created by zhiya.zhang
@@ -30,10 +29,13 @@ class SocketTool(private var scope: CoroutineScope) {
         job = scope.launch {
             try {
                 conn.postValue(true)
-                connectAndLife(msg, state)
+                connectAndLife(msg,
+                               state)
             } catch (e: Exception) {
                 conn.postValue(false)
-                Log.e("SocketTool", "连接异常", e)
+                Log.e("SocketTool",
+                      "连接异常",
+                      e)
             }
         }
     }
@@ -41,9 +43,12 @@ class SocketTool(private var scope: CoroutineScope) {
     @Suppress("BlockingMethodInNonBlockingContext")
     private suspend fun connectAndLife(msg: MutableLiveData<String>, state: MutableLiveData<String>, tryCount: Int = TRY_COUNT): Boolean = withContext(Dispatchers.IO) {
         val socket = Socket().also {
-            it.setSoLinger(true, 0)
+            it.setSoLinger(true,
+                           0)
             it.keepAlive = true
-            it.connect(InetSocketAddress(HOST, PORT), CONNECT_TIME_OUT)
+            it.connect(InetSocketAddress(HOST,
+                                         PORT),
+                       CONNECT_TIME_OUT)
         }
         msg.postValue("Succ!")
         val os = socket.getOutputStream()
@@ -56,7 +61,8 @@ class SocketTool(private var scope: CoroutineScope) {
                 var text: String? = null
                 while (text.isNullOrEmpty()) {
                     //无限，我自己写的服务端，要不断开，要不返回结果
-                    text = BufferedReader(InputStreamReader(ins, Charsets.UTF_8)).readLine()
+                    text = BufferedReader(InputStreamReader(ins,
+                                                            Charsets.UTF_8)).readLine()
                 }
                 if ("apkfile" in text) {
                     val fileSize = text.split(" ")[1].toLong()
@@ -66,17 +72,22 @@ class SocketTool(private var scope: CoroutineScope) {
                     val bis = BufferedInputStream(ins)
                     var len: Int
                     var totalSize = 0
-                    Log.e("SocketTool", "开始接收")
+                    Log.e("SocketTool",
+                          "开始接收")
                     while ((bis.read(buf)).also { len = it } != -1) {
-                        fos.write(buf, 0, len)
+                        fos.write(buf,
+                                  0,
+                                  len)
                         totalSize += len
                         if (fileSize <= totalSize) {
-                            Log.e("SocketTool", "接收长度满足，结束")
+                            Log.e("SocketTool",
+                                  "接收长度满足，结束")
                             break
                         }
                     }
                     fos.close()
-                    Log.e("SocketTool", "接收完毕")
+                    Log.e("SocketTool",
+                          "接收完毕")
                     state.postValue("update")
                 } else if (!text.isNullOrEmpty()) {
                     state.postValue(text)
@@ -86,19 +97,24 @@ class SocketTool(private var scope: CoroutineScope) {
                 }
             } while (!job.isCancelled && job.isActive)
         } catch (e: SocketTimeoutException) {
-            Log.e("SocketTool", "连接超时,准备重试:${tryCount}", e)
+            Log.e("SocketTool",
+                  "连接超时,准备重试:${tryCount}",
+                  e)
             if (tryCount <= 0) {
                 msg.postValue("try err!connect close!")
                 throw e
             } else {
                 msg.postValue("try connect")
-                connectAndLife(msg, state, tryCount - 1)
+                connectAndLife(msg,
+                               state,
+                               tryCount - 1)
             }
         } catch (e: Exception) {
             msg.postValue("err!connect close!$e")
             throw e
         } finally {
-            Log.e("SocketTool", "连接断开")
+            Log.e("SocketTool",
+                  "连接断开")
             os.close()
             ins.close()
             socket.close()
@@ -106,8 +122,106 @@ class SocketTool(private var scope: CoroutineScope) {
         true
     }
 
+    fun adjustPhotoRotation(bm: Bitmap, orientationDegree: Int): Bitmap {
+        val m = Matrix()
+        m.setRotate(orientationDegree.toFloat(),
+                    bm.width.toFloat() / 2,
+                    bm.height.toFloat() / 2)
+        val targetX: Float
+        val targetY: Float
+        if (orientationDegree == 90) {
+            targetX = bm.height.toFloat()
+            targetY = 0f
+        } else {
+            targetX = bm.height.toFloat()
+            targetY = bm.width.toFloat()
+        }
+        val values = FloatArray(9)
+        m.getValues(values)
+        val x1 = values[Matrix.MTRANS_X]
+        val y1 = values[Matrix.MTRANS_Y]
+        m.postTranslate(targetX - x1,
+                        targetY - y1)
+        val bm1 = Bitmap.createBitmap(bm.height,
+                                      bm.width,
+                                      Bitmap.Config.ARGB_8888)
+        val paint = Paint()
+        val canvas = Canvas(bm1)
+        canvas.drawBitmap(bm,
+                          m,
+                          paint)
+        return bm1
+    }
+
     @Suppress("BlockingMethodInNonBlockingContext")
     suspend fun sendFile(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        Log.e("SocketToolFile",
+              "sendStart")
+        val fileSocket = Socket().also {
+            it.connect(InetSocketAddress(HOST,
+                                         FILE_PORT),
+                       CONNECT_TIME_OUT)
+            it.setSoLinger(true,
+                           0)
+        }
+        val fileOs = fileSocket.getOutputStream()
+        val fileIns = fileSocket.getInputStream()
+        val file = uri.toFile()
+        try {
+            val fileByte = file.readBytes()
+            val fileName = file.name
+            ByteArrayOutputStream().use { bas ->
+                var bitmap = BitmapFactory.decodeByteArray(fileByte,
+                                                           0,
+                                                           fileByte.size)
+                if (bitmap.width > bitmap.height) {
+                    bitmap = adjustPhotoRotation(bitmap,
+                                                 90)
+                }
+                val isCompress = bitmap.compress(Bitmap.CompressFormat.JPEG,
+                                                 100,
+                                                 bas)
+                val bytes = if (isCompress) {
+                    Log.e("SocketToolFile",
+                          "compress succ")
+                    bas.toByteArray()
+                } else {
+                    Log.e("SocketToolFile",
+                          "compress err")
+                    fileByte
+                }
+                bas.flush()
+                val fileSize = bytes.size
+                fileOs.write("fileput $fileSize $fileName".toByteArray())
+                delay(200)
+                fileOs.write(bytes)
+                fileOs.flush()
+            }
+            var text: String?
+            do {
+                text = BufferedReader(InputStreamReader(fileIns,
+                                                        Charsets.UTF_8)).readLine()
+            } while (text.isNullOrEmpty())
+            Log.e("SocketToolFile",
+                  "sendResult:${text}")
+        } catch (e: Exception) {
+            Log.e("SocketToolFile",
+                  "sendError",
+                  e)
+            sendFile(uri)
+        } finally {
+            Log.e("SocketToolFile",
+                  "sendEnd")
+            fileOs.close()
+            fileIns.close()
+            fileSocket.close()
+            file.delete()
+        }
+        true
+    }
+
+    /*@Suppress("BlockingMethodInNonBlockingContext")
+    suspend fun sendFile2(uri: Uri): Boolean = withContext(Dispatchers.IO) {
         Log.e("SocketToolFile", "sendStart")
         val fileSocket = Socket().also {
             it.connect(InetSocketAddress(HOST, FILE_PORT), CONNECT_TIME_OUT)
@@ -118,10 +232,10 @@ class SocketTool(private var scope: CoroutineScope) {
         val file = uri.toFile()
         try {
             val fileByte = file.readBytes()
-            val fileName = file.name
+            val fileName = "ys0-"+file.name
             ByteArrayOutputStream().use { bas ->
                 val bitmap = BitmapFactory.decodeByteArray(fileByte, 0, fileByte.size)
-                val isCompress = bitmap.compress(Bitmap.CompressFormat.JPEG, 60, bas)
+                val isCompress = bitmap.compress(Bitmap.CompressFormat.JPEG, 80, bas)
                 val bytes = if (isCompress) {
                     Log.e("SocketToolFile", "compress succ")
                     bas.toByteArray()
@@ -143,14 +257,62 @@ class SocketTool(private var scope: CoroutineScope) {
             Log.e("SocketToolFile", "sendResult:${text}")
         } catch (e: Exception) {
             Log.e("SocketToolFile", "sendError", e)
-            sendFile(uri)
+            sendFile2(uri)
         } finally {
             Log.e("SocketToolFile", "sendEnd")
             fileOs.close()
             fileIns.close()
             fileSocket.close()
-            file.delete()
+//            file.delete()
         }
         true
     }
+
+    @Suppress("BlockingMethodInNonBlockingContext")
+    suspend fun sendFile3(uri: Uri): Boolean = withContext(Dispatchers.IO) {
+        Log.e("SocketToolFile", "sendStart")
+        val fileSocket = Socket().also {
+            it.connect(InetSocketAddress(HOST, FILE_PORT), CONNECT_TIME_OUT)
+            it.setSoLinger(true, 0)
+        }
+        val fileOs = fileSocket.getOutputStream()
+        val fileIns = fileSocket.getInputStream()
+        val file = uri.toFile()
+        try {
+            val fileByte = file.readBytes()
+            val fileName = file.name
+            ByteArrayOutputStream().use { bas ->
+                val bitmap = BitmapFactory.decodeByteArray(fileByte, 0, fileByte.size)
+                val isCompress = bitmap.compress(Bitmap.CompressFormat.JPEG, 70, bas)
+                val bytes = if (isCompress) {
+                    Log.e("SocketToolFile", "compress succ")
+                    bas.toByteArray()
+                } else {
+                    Log.e("SocketToolFile", "compress err")
+                    fileByte
+                }
+                bas.flush()
+                val fileSize = bytes.size
+                fileOs.write("fileput $fileSize $fileName".toByteArray())
+                delay(200)
+                fileOs.write(bytes)
+                fileOs.flush()
+            }
+            var text: String?
+            do {
+                text = BufferedReader(InputStreamReader(fileIns, Charsets.UTF_8)).readLine()
+            } while (text.isNullOrEmpty())
+            Log.e("SocketToolFile", "sendResult:${text}")
+        } catch (e: Exception) {
+            Log.e("SocketToolFile", "sendError", e)
+            sendFile3(uri)
+        } finally {
+            Log.e("SocketToolFile", "sendEnd")
+            fileOs.close()
+            fileIns.close()
+            fileSocket.close()
+//            file.delete()
+        }
+        true
+    }*/
 }

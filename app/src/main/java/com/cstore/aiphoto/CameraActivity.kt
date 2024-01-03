@@ -14,10 +14,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
-import androidx.camera.core.Preview
+import androidx.camera.core.*
 import androidx.camera.extensions.ExtensionMode
 import androidx.camera.extensions.ExtensionsManager
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -34,6 +31,7 @@ import java.util.*
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.random.Random.Default.nextInt
+
 
 /**
  * Created by zhiya.zhang
@@ -70,12 +68,10 @@ class CameraActivity : AppCompatActivity() {
                 val t = pickText + "拍照"
                 viewBinding.pickState.text = t
                 takePhoto(it)
-            }
-            else if(it == "update") {
+            } else if(it == "update") {
                 if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     installPermission()
-                }
-                else {
+                } else {
                     FileUtil.installApk(DownloadUtil.apkFilePath, "com.cstore.aiphoto.fileprovider")
                 }
             }
@@ -84,8 +80,7 @@ class CameraActivity : AppCompatActivity() {
             Log.e("Act", "Start Install APK!")
             if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 installPermission()
-            }
-            else {
+            } else {
                 FileUtil.installApk(DownloadUtil.apkFilePath, "com.cstore.aiphoto.fileprovider")
             }
         }
@@ -95,8 +90,7 @@ class CameraActivity : AppCompatActivity() {
         vm.connState.observe({ lifecycle }) {
             if(it) {
                 viewBinding.tryConn.visibility = View.GONE
-            }
-            else {
+            } else {
                 viewBinding.tryConn.visibility = View.VISIBLE
             }
         }
@@ -107,6 +101,14 @@ class CameraActivity : AppCompatActivity() {
         vm.socketMsg.observe({ lifecycle }) {
             viewBinding.msg.text = it
         }
+        vm.sendCount.observe({ lifecycle }) {
+            try {
+                val msg = "已拍:${vm.picCount.value} 已上传:${vm.sendCount.value}"
+                viewBinding.countState.text = msg
+            } catch(e: Exception) {
+
+            }
+        }
         viewBinding.tryConn.setOnClickListener {
             vm.tryConn()
             viewBinding.msg.text = ""
@@ -116,14 +118,12 @@ class CameraActivity : AppCompatActivity() {
                 if(it) { // Take the user to the success fragment when permission is granted
                     Toast.makeText(this, "Permission request granted", Toast.LENGTH_LONG).show()
                     vm.connectSocket()
-                }
-                else {
+                } else {
                     Toast.makeText(this, "Permission request denied", Toast.LENGTH_LONG).show()
                 }
             }
             permLauncher.launch(Manifest.permission.CAMERA)
-        }
-        else {
+        } else {
             vm.connectSocket()
         }
     }
@@ -154,10 +154,7 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun getSelectLocation(): String {
-        return (viewBinding.radio.cb1.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb2.takeIf { it.isChecked }?.text
-            ?: "").toString() + (viewBinding.radio.cb3.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb4.takeIf { it.isChecked }?.text
-            ?: "").toString() + (viewBinding.radio.cb5.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb6.takeIf { it.isChecked }?.text
-            ?: "").toString() + (viewBinding.radio.cb7.takeIf { it.isChecked }?.text ?: "").toString()
+        return (viewBinding.radio.cb1.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb2.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb3.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb4.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb5.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb6.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb7.takeIf { it.isChecked }?.text ?: "").toString()
     }
 
     private val model = Build.MODEL
@@ -166,6 +163,8 @@ class CameraActivity : AppCompatActivity() {
         val light = values[1]
         val barcode = values[2]
         val location = values[3]
+        val zp = values[4]
+        val group = values[5]
         val phoneTag = viewBinding.phoneTag.text.toString().takeIf { it.isNotEmpty() } ?: "Null"
         imageCapture?.let { imageCapture ->
             val fileName = "${phoneTag}_${model}_${
@@ -178,7 +177,9 @@ class CameraActivity : AppCompatActivity() {
             imageCapture.takePicture(outputOptions, cameraExecutor, object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
                     val saveUri = outputFileResults.savedUri ?: Uri.fromFile(photoFile)
-                    vm.sendFile(saveUri, light, barcode, phoneTag)
+                    // 测试
+//                    vm.sendFile(saveUri)
+                    vm.sendFile(saveUri, light, barcode, phoneTag, zp, group)
                     val t = pickText + "等待"
                     MainScope().launch {
                         viewBinding.pickState.text = t
@@ -208,42 +209,44 @@ class CameraActivity : AppCompatActivity() {
     }
 
     @SuppressLint("UnsafeOptInUsageError")
-    private suspend fun bindCameraUseCases() { //        val cam2Infos = cameraProvider!!.availableCameraInfos.map {
-        //            Camera2CameraInfo.from(it)
-        //        }.sortedByDescending {
-        //            // HARDWARE_LEVEL is Int type, with the order of:
-        //            // LEGACY < LIMITED < FULL < LEVEL_3 < EXTERNAL
-        //            it.getCameraCharacteristic(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)
-        //        }
-        //        val cameraSelector2 = CameraSelector.Builder().addCameraFilter {
-        //                it.filter { camInfo->
-        //                    val thisCamId = Camera2CameraInfo.from(camInfo).cameraId
-        //                    thisCamId == cam2Infos[0].cameraId
-        //                }
-        //            }.build()
+    private suspend fun bindCameraUseCases() {
         val extensionsManager = ExtensionsManager.getInstanceAsync(this, cameraProvider!!).await()
         val cameraSelector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
         preview = Preview.Builder().build().also {
             it.setSurfaceProvider(viewBinding.viewFinder.surfaceProvider)
         } // 效果：CAPTURE_MODE_MAXIMIZE_QUALITY   速度：CAPTURE_MODE_MINIMIZE_LATENCY
         imageCapture = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY).build()
-
-
         try {
-
-            cameraProvider?.unbindAll()
-            if(extensionsManager.isExtensionAvailable(cameraSelector, ExtensionMode.AUTO)) {
-                val bokehCameraSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, ExtensionMode.AUTO)
-                cameraProvider?.bindToLifecycle(this, bokehCameraSelector, preview, imageCapture)
-                Log.e("Camera", "自动最高")
-            }
-            else {
-                cameraProvider?.bindToLifecycle(this, cameraSelector, preview, imageCapture)
-                Log.e("Camera", "无法生效")
+            cameraProvider?.also {
+                cameraProvider?.unbindAll()
+                val camera = if(extensionsManager.isExtensionAvailable(cameraSelector, ExtensionMode.AUTO)) {
+                    Log.e("Camera", "自动最高")
+                    val bokehCameraSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, ExtensionMode.AUTO)
+                    it.bindToLifecycle(this, bokehCameraSelector, preview, imageCapture)
+                } else {
+                    Log.e("Camera", "无法生效")
+                    it.bindToLifecycle(this, cameraSelector, preview, imageCapture)
+                }
+                val mCameraInfo = camera.cameraInfo
+                val mCameraControl = camera.cameraControl
+                initCameraListener(mCameraInfo, mCameraControl)
             }
         } catch(e: Exception) {
             Log.e(TAG, "Use case binding failed", e)
         }
+    }
+
+    private fun initCameraListener(mCameraInfo: CameraInfo, mCameraControl: CameraControl) {
+        val zoomState = mCameraInfo.zoomState
+        val listener = CameraXPreviewViewTouchListener(this)
+        listener.setCustomTouchListener(object : CameraXPreviewViewTouchListener.CustomTouchListener {
+            override fun zoom(delta: Float) {
+                val currentZoomRatio = zoomState.value!!.zoomRatio
+                mCameraControl.setZoomRatio(currentZoomRatio * delta)
+                Log.e(TAG, "触发放大")
+            }
+        })
+        viewBinding.viewFinder.setOnTouchListener(listener)
     }
 
     override fun onDestroy() {
@@ -260,8 +263,7 @@ class CameraActivity : AppCompatActivity() {
             }
             return if(fileDir != null && fileDir.exists()) {
                 fileDir
-            }
-            else {
+            } else {
                 appContext.filesDir
             }
         }

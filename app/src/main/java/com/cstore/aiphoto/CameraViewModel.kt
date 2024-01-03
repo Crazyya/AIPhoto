@@ -42,6 +42,9 @@ class CameraViewModel : ViewModel() {
 
     private lateinit var job: Job
 
+    val picCount = MutableLiveData<Int>()
+    val sendCount = MutableLiveData<Int>()
+
     /**
      * 链接socket
      */
@@ -58,7 +61,7 @@ class CameraViewModel : ViewModel() {
         socketTool.connect(connState, socketMsg, mState)
     }
 
-    fun sendFile(uri: Uri, light: String, barCode: String, phoneType: String) {
+    fun sendFile(uri: Uri, light: String, barCode: String, phoneType: String, zp: String, group: String) {
         viewModelScope.launch {
             try {
                 withContext(Dispatchers.IO) {
@@ -70,8 +73,24 @@ class CameraViewModel : ViewModel() {
                     builder.addFormDataPart("phone_type", phoneType)
                     builder.addFormDataPart("lighting_type", light)
                     builder.addFormDataPart("item_code_str", barCode)
+                    when(zp) {
+                        "1"  -> {
+                            builder.addFormDataPart("upload_type", "0")
+                        }
+
+                        "2"  -> {
+                            builder.addFormDataPart("upload_type", "1")
+                            builder.addFormDataPart("group", group)
+                        }
+
+                        else -> {
+                            builder.addFormDataPart("upload_type", "1")
+                        }
+                    }
                     val parts = builder.build().parts
-                    val result = getHttpData(parts)
+                    picCount.postValue((picCount.value ?: 0) + 1)
+                    val result = getHttpData(parts, zp)
+                    sendCount.postValue((sendCount.value ?: 0) + 1)
                     result.takeIf { it.statusCode == 200000 }?.let {
                         Log.e("sendFile", "上传成功:" + it.statusMessage)
                     } ?: sendState.postValue("HTTP图片异常:${result.statusMessage}")
@@ -83,20 +102,20 @@ class CameraViewModel : ViewModel() {
         }
     }
 
-    private suspend fun getHttpData(parts: List<MultipartBody.Part>): HttpResult {
+    private suspend fun getHttpData(parts: List<MultipartBody.Part>, zp: String, tryCount: Int = 5): HttpResult {
         return try {
-            val httpResult = getApi().postImgAsync(parts).runCatching { await() }
-            val result = httpResult.getOrThrow()
-            result
-        } catch(e: Exception) {
-            val result = try {
-                val httpResult = getApi().postImgAsync(parts).runCatching { await() }
-                httpResult.getOrThrow()
-            } catch(e: Exception) {
-                throw e
+            if(zp == "3") {
+                Api.imgService1.postImgAsync(parts).run { await() }
+            } else {
+                getApi().postImgAsync(parts).run { await() }
             }
-            sendState.postValue("HTTP图片服务器异常:${e.message}")
-            return result
+        } catch(e: Exception) {
+            if(tryCount == 0) {
+                throw e
+            } else {
+                delay(1000)
+                getHttpData(parts, zp, tryCount - 1)
+            }
         }
     }
 
@@ -104,8 +123,7 @@ class CameraViewModel : ViewModel() {
         return if(sendUrl == 0) {
             sendUrl = 1
             Api.imgService1
-        }
-        else {
+        } else {
             sendUrl = 0
             Api.imgService2
         }
@@ -137,11 +155,11 @@ class CameraViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val download = DownloadUtil({
-                    Log.e("CameraViewModel", "下载完成")
-                    updateState.value = true
-                }, {
-                    Log.e("CameraViewModel", it)
-                })
+                                                Log.e("CameraViewModel", "下载完成")
+                                                updateState.value = true
+                                            }, {
+                                                Log.e("CameraViewModel", it)
+                                            })
                 download.downloadAPK()
             } catch(e: Exception) {
                 Log.e("CameraViewModel", "安装异常", e)

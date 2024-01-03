@@ -28,8 +28,8 @@ abstract class BaseApi {
                     it.proceed(request)
                 }
                 .connectTimeout(timeOutSecond, TimeUnit.SECONDS)
-                .readTimeout(timeOutSecond, TimeUnit.SECONDS)
-                .writeTimeout(timeOutSecond, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .writeTimeout(60, TimeUnit.SECONDS)
         val client = builder.build()
         val retrofit = Retrofit.Builder().apply {
             baseUrl(baseUrl)

@@ -1,6 +1,7 @@
 package com.cstore.aiphoto
 
 import android.app.Application
+import android.content.Context
 
 /**
  * Created by zhiya.zhang
@@ -9,11 +10,14 @@ import android.app.Application
 class MyApplication : Application() {
     companion object {
         private var instance: MyApplication? = null
+        @JvmStatic
         fun instance() = instance!!
     }
 
     override fun onCreate() {
         super.onCreate()
         instance = this
+        //全局错误信息收集
+        Thread.setDefaultUncaughtExceptionHandler(GlobalException.instance())
     }
 }

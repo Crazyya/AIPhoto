@@ -1,5 +1,6 @@
 package com.cstore.aiphoto
 
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import androidx.core.net.toFile
@@ -13,7 +14,9 @@ import kotlinx.coroutines.*
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.FileInputStream
 import java.util.*
+import kotlin.collections.ArrayList
 
 /**
  * Created by zhiya.zhang
@@ -33,14 +36,20 @@ class CameraViewModel : ViewModel() {
     val updateState = MutableLiveData<Boolean>()
 
     //待发送数据
-    private val waitSendData = LinkedList<Uri>()
+    private val waitSendData1 = LinkedList<SendData>()
+    private val waitSendData2 = LinkedList<SendData>()
+
+    private data class SendData(
+        val uri: Uri, val light: String, val barCode: String, val phoneType: String, val zp: String, val group: String, val tzid: String
+                               )
 
     //0=用1的url 1=用2的url
     private var sendUrl = 0
 
     private lateinit var socketTool: SocketTool
 
-    private lateinit var job: Job
+    private var job1: Job? = null
+    private var job2: Job? = null
 
     val picCount = MutableLiveData<Int>()
     val sendCount = MutableLiveData<Int>()
@@ -48,56 +57,150 @@ class CameraViewModel : ViewModel() {
     /**
      * 链接socket
      */
-    fun connectSocket() {
-        socketTool = SocketTool(viewModelScope)
-        socketTool.connect(connState, socketMsg, mState)
-        job = viewModelScope.launch {
-            jobRun()
+    fun connectSocket(ip: String) {
+        socketTool = SocketTool(viewModelScope, ip, socketMsg, mState)
+        socketTool.connect(connState)
+    }
+
+    fun tryConn(ip: String) {
+        socketMsg.postValue("")
+        socketTool = SocketTool(viewModelScope, ip, socketMsg, mState)
+        socketTool.connect(connState)
+    }
+
+    private var waitDataJud = 0
+
+    fun sendFile(uri: Uri, light: String, barCode: String, phoneType: String, zp: String, group: String, tzid: String) {
+        if(waitDataJud == 0) {
+            waitSendData1.offer(SendData(uri, light, barCode, phoneType, zp, group, tzid))
+            waitDataJud = 1
+            if(job1 == null || (job1!!.isCancelled && !job1!!.isActive)) {
+                job1 = viewModelScope.launch { sendJobRun1() }
+            }
+        } else {
+            waitSendData2.offer(SendData(uri, light, barCode, phoneType, zp, group, tzid))
+            waitDataJud = 0
+            if(job2 == null || (job2!!.isCancelled && !job2!!.isActive)) {
+                job2 = viewModelScope.launch { sendJobRun2() }
+            }
         }
     }
 
-    fun tryConn() {
-        socketTool = SocketTool(viewModelScope)
-        socketTool.connect(connState, socketMsg, mState)
+    private suspend fun sendJobRun1() = withContext(Dispatchers.IO) {
+        while(true) {
+            try {
+                if(waitSendData1.isEmpty()) {
+                    delay(1000)
+                    continue
+                }
+                waitSendData1.poll()?.also { sendData ->
+                    val file = sendData.uri.toFile()
+                    val inst = FileInputStream(file)
+                    val bmp = BitmapFactory.decodeStream(inst)
+                    inst.close()
+                    try {
+                        val data = file.readBytes()
+                        val x = bmp.byteCount
+                        print(x)
+                        val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+                        val requestBody = data.toRequestBody("multipart/form-data".toMediaTypeOrNull())
+                        builder.addFormDataPart("file", file.name, requestBody)
+                        builder.addFormDataPart("phone_type", sendData.phoneType)
+                        builder.addFormDataPart("lighting_type", sendData.light)
+                        builder.addFormDataPart("item_code_str", sendData.barCode)
+                        if(sendData.tzid.isNotEmpty()) {
+                            builder.addFormDataPart("sampling_task_id", sendData.tzid)
+                        }
+                        val uploadType = when(sendData.zp) {
+                            "1"  -> {
+                                "0"
+                            }
+
+                            "2"  -> {
+                                builder.addFormDataPart("group", sendData.group)
+                                "1"
+                            }
+
+                            "3"  -> {
+                                "2"
+                            }
+
+                            else -> {
+                                "1"
+                            }
+                        }
+                        builder.addFormDataPart("upload_type", uploadType)
+                        val parts = builder.build().parts
+                        val result = getHttpData(parts, sendData.zp)
+                        sendCount.postValue((sendCount.value ?: 0) + 1)
+                        result.takeIf { it.statusCode == 200000 }?.let {
+                            Log.e("sendFile", "上传成功:" + it.statusMessage)
+                        } ?: sendState.postValue("HTTP图片异常:${result.statusMessage}")
+                    } finally {
+                        file.delete()
+                    }
+                }
+            } catch(e: CancellationException) {
+                Log.e("VM", "job信息:${job1!!.isCancelled}-${job1!!.isActive}-${job1!!.isCompleted}", e)
+            } catch(e: Exception) {
+                Log.e("CameraViewModel", "发送异常", e)
+            }
+        }
     }
 
-    fun sendFile(uri: Uri, light: String, barCode: String, phoneType: String, zp: String, group: String) {
-        viewModelScope.launch {
+    private suspend fun sendJobRun2() = withContext(Dispatchers.IO) {
+        while(true) {
             try {
-                withContext(Dispatchers.IO) {
-                    val file = uri.toFile()
-                    val data = file.readBytes()
-                    val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
-                    val requestBody = data.toRequestBody("multipart/form-data".toMediaTypeOrNull())
-                    builder.addFormDataPart("file", file.name, requestBody)
-                    builder.addFormDataPart("phone_type", phoneType)
-                    builder.addFormDataPart("lighting_type", light)
-                    builder.addFormDataPart("item_code_str", barCode)
-                    when(zp) {
-                        "1"  -> {
-                            builder.addFormDataPart("upload_type", "0")
-                        }
-
-                        "2"  -> {
-                            builder.addFormDataPart("upload_type", "1")
-                            builder.addFormDataPart("group", group)
-                        }
-
-                        else -> {
-                            builder.addFormDataPart("upload_type", "1")
-                        }
-                    }
-                    val parts = builder.build().parts
-                    picCount.postValue((picCount.value ?: 0) + 1)
-                    val result = getHttpData(parts, zp)
-                    sendCount.postValue((sendCount.value ?: 0) + 1)
-                    result.takeIf { it.statusCode == 200000 }?.let {
-                        Log.e("sendFile", "上传成功:" + it.statusMessage)
-                    } ?: sendState.postValue("HTTP图片异常:${result.statusMessage}")
+                if(waitSendData2.isEmpty()) {
+                    delay(1000)
+                    continue
                 }
+                waitSendData2.poll()?.also { sendData ->
+                    val file = sendData.uri.toFile()
+                    try {
+                        val data = file.readBytes()
+                        val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+                        val requestBody = data.toRequestBody("multipart/form-data".toMediaTypeOrNull())
+                        builder.addFormDataPart("file", file.name, requestBody)
+                        builder.addFormDataPart("phone_type", sendData.phoneType)
+                        builder.addFormDataPart("lighting_type", sendData.light)
+                        builder.addFormDataPart("item_code_str", sendData.barCode)
+                        if(sendData.tzid.isNotEmpty()) {
+                            builder.addFormDataPart("sampling_task_id", sendData.tzid)
+                        }
+                        val uploadType = when(sendData.zp) {
+                            "1"  -> {
+                                "0"
+                            }
+
+                            "2"  -> {
+                                builder.addFormDataPart("group", sendData.group)
+                                "1"
+                            }
+
+                            "3"  -> {
+                                "2"
+                            }
+
+                            else -> {
+                                "1"
+                            }
+                        }
+                        builder.addFormDataPart("upload_type", uploadType)
+                        val parts = builder.build().parts
+                        val result = getHttpData(parts, sendData.zp)
+                        sendCount.postValue((sendCount.value ?: 0) + 1)
+                        result.takeIf { it.statusCode == 200000 }?.let {
+                            Log.e("sendFile", "上传成功:" + it.statusMessage)
+                        } ?: sendState.postValue("HTTP图片异常:${result.statusMessage}")
+                    } finally {
+                        file.delete()
+                    }
+                }
+            } catch(e: CancellationException) {
+                Log.e("VM", "job信息:${job2!!.isCancelled}-${job2!!.isActive}-${job2!!.isCompleted}", e)
             } catch(e: Exception) {
-                Log.e("sendFile", "图片发送异常", e)
-                sendState.postValue("HTTP图片异常:${e.message.takeIf { it.isNullOrEmpty() } ?: e.localizedMessage.takeIf { it.isNullOrEmpty() } ?: e.toString()}")
+                Log.e("CameraViewModel", "发送异常", e)
             }
         }
     }
@@ -120,6 +223,7 @@ class CameraViewModel : ViewModel() {
     }
 
     private fun getApi(): APIProxy.FileAPI {
+//        return Api.imgService2
         return if(sendUrl == 0) {
             sendUrl = 1
             Api.imgService1
@@ -127,28 +231,6 @@ class CameraViewModel : ViewModel() {
             sendUrl = 0
             Api.imgService2
         }
-    }
-
-    fun sendFile(uri: Uri) {
-        waitSendData.offer(uri)
-    }
-
-    private suspend fun jobRun() {
-        do {
-            try {
-                delay(100)
-                waitSendData.poll()?.also {
-                    sendState.postValue("1")
-                    socketTool.sendFile(it)
-                    Log.e("CameraViewModel", "发送完成")
-                    sendState.postValue("0")
-                }
-            } catch(e: CancellationException) {
-                Log.e("VM", "job信息:${job.isCancelled}-${job.isActive}-${job.isCompleted}", e)
-            } catch(e: Exception) {
-                Log.e("CameraViewModel", "发送异常", e)
-            }
-        } while(!job.isCancelled && job.isActive)
     }
 
     fun updateApk() {

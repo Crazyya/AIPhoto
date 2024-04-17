@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.WindowManager
 import android.widget.Toast
@@ -50,19 +51,30 @@ class CameraActivity : AppCompatActivity() {
     private val connText = "链接信息:"
     private val pickText = "拍照状态:"
     private val sendText = "上传状态:"
+    private fun getOutputDirectory(): File {
+        val fileDir = this.externalCacheDirs.firstOrNull()?.let {
+            File(it, resources.getString(R.string.app_name)).apply { mkdirs() }
+        }
+        return if(fileDir != null && fileDir.exists()) {
+            fileDir
+        } else {
+            this.filesDir
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         super.onCreate(savedInstanceState)
         viewBinding = ActivityCameraBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
+        val ip = intent.getStringExtra("ip") ?: "192.168.7.88"
         vm = ViewModelProvider(this)[CameraViewModel::class.java]
-        outputDirectory = getOutputDirectory(this)
+        outputDirectory = getOutputDirectory()
         cameraExecutor = Executors.newSingleThreadExecutor()
         viewBinding.viewFinder.post {
             setUpCamera()
         }
-        vm.mState.observe({ lifecycle }) {
+        vm.mState.observe(this) {
             Log.e("Act", "State:${it}")
             if("start" in it) {
                 val t = pickText + "拍照"
@@ -76,7 +88,7 @@ class CameraActivity : AppCompatActivity() {
                 }
             }
         }
-        vm.updateState.observe({ lifecycle }) {
+        vm.updateState.observe(this) {
             Log.e("Act", "Start Install APK!")
             if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 installPermission()
@@ -84,47 +96,55 @@ class CameraActivity : AppCompatActivity() {
                 FileUtil.installApk(DownloadUtil.apkFilePath, "com.cstore.aiphoto.fileprovider")
             }
         }
-        vm.sendState.observe({ lifecycle }) {
+        vm.sendState.observe(this) {
             viewBinding.sendState.text = it
         }
-        vm.connState.observe({ lifecycle }) {
+        vm.connState.observe(this) {
             if(it) {
                 viewBinding.tryConn.visibility = View.GONE
             } else {
-                viewBinding.tryConn.visibility = View.VISIBLE
+//                viewBinding.tryConn.visibility = View.VISIBLE
+                vm.tryConn(ip)
             }
         }
-        vm.socketMsg.observe({ lifecycle }) {
+        vm.socketMsg.observe(this) {
             val t = connText + it
             viewBinding.connState.text = t
         }
-        vm.socketMsg.observe({ lifecycle }) {
+        vm.socketMsg.observe(this) {
             viewBinding.msg.text = it
         }
-        vm.sendCount.observe({ lifecycle }) {
+        vm.sendCount.observe(this) {
             try {
                 val msg = "已拍:${vm.picCount.value} 已上传:${vm.sendCount.value}"
                 viewBinding.countState.text = msg
-            } catch(e: Exception) {
+            } catch(_: Exception) {
+
+            }
+        }
+        vm.picCount.observe(this) {
+            try {
+                val msg = "已拍:${vm.picCount.value} 已上传:${vm.sendCount.value}"
+                viewBinding.countState.text = msg
+            } catch(_: Exception) {
 
             }
         }
         viewBinding.tryConn.setOnClickListener {
-            vm.tryConn()
-            viewBinding.msg.text = ""
+            vm.tryConn(ip)
         }
         if(!hasPermissions(this)) {
             val permLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
                 if(it) { // Take the user to the success fragment when permission is granted
                     Toast.makeText(this, "Permission request granted", Toast.LENGTH_LONG).show()
-                    vm.connectSocket()
+                    vm.connectSocket(ip)
                 } else {
                     Toast.makeText(this, "Permission request denied", Toast.LENGTH_LONG).show()
                 }
             }
             permLauncher.launch(Manifest.permission.CAMERA)
         } else {
-            vm.connectSocket()
+            vm.connectSocket(ip)
         }
     }
 
@@ -158,13 +178,22 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private val model = Build.MODEL
+    fun getValue(data: List<String>, index: Int): String {
+        return try {
+            data[index]
+        } catch(e: Exception) {
+            ""
+        }
+    }
+
     private fun takePhoto(value: String) {
         val values = value.split("$")
-        val light = values[1]
-        val barcode = values[2]
-        val location = values[3]
-        val zp = values[4]
-        val group = values[5]
+        val light = getValue(values, 1)
+        val barcode = getValue(values, 2)
+        val location = getValue(values, 3)
+        val zp = getValue(values, 4)
+        val group = getValue(values, 5)
+        val tzid = getValue(values, 6)
         val phoneTag = viewBinding.phoneTag.text.toString().takeIf { it.isNotEmpty() } ?: "Null"
         imageCapture?.let { imageCapture ->
             val fileName = "${phoneTag}_${model}_${
@@ -172,6 +201,7 @@ class CameraActivity : AppCompatActivity() {
             }_${
                 nextInt(10000, 99999)
             }_${getSelectLocation()}_${location}.jpg"
+
             val photoFile = File(outputDirectory, fileName)
             val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
             imageCapture.takePicture(outputOptions, cameraExecutor, object : ImageCapture.OnImageSavedCallback {
@@ -179,9 +209,10 @@ class CameraActivity : AppCompatActivity() {
                     val saveUri = outputFileResults.savedUri ?: Uri.fromFile(photoFile)
                     // 测试
 //                    vm.sendFile(saveUri)
-                    vm.sendFile(saveUri, light, barcode, phoneTag, zp, group)
+                    vm.sendFile(saveUri, light, barcode, phoneTag, zp, group, tzid)
                     val t = pickText + "等待"
                     MainScope().launch {
+                        vm.picCount.postValue((vm.picCount.value ?: 0) + 1)
                         viewBinding.pickState.text = t
                     }
                 }
@@ -237,16 +268,28 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun initCameraListener(mCameraInfo: CameraInfo, mCameraControl: CameraControl) {
-        val zoomState = mCameraInfo.zoomState
-        val listener = CameraXPreviewViewTouchListener(this)
-        listener.setCustomTouchListener(object : CameraXPreviewViewTouchListener.CustomTouchListener {
-            override fun zoom(delta: Float) {
-                val currentZoomRatio = zoomState.value!!.zoomRatio
-                mCameraControl.setZoomRatio(currentZoomRatio * delta)
-                Log.e(TAG, "触发放大")
+//        val zoomState = mCameraInfo.zoomState
+//        val listener = CameraXPreviewViewTouchListener(this)
+//        listener.setCustomTouchListener(object : CameraXPreviewViewTouchListener.CustomTouchListener {
+//            override fun zoom(delta: Float) {
+//                val currentZoomRatio = zoomState.value!!.zoomRatio
+//                mCameraControl.setZoomRatio(currentZoomRatio * delta)
+//                Log.e(TAG, "触发放大")
+//            }
+//        })
+        val listener = object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val scale = mCameraInfo.zoomState.value!!.zoomRatio * detector.scaleFactor
+                mCameraControl.setZoomRatio(scale)
+                return true
             }
-        })
-        viewBinding.viewFinder.setOnTouchListener(listener)
+        }
+        val scaleGestureDetector = ScaleGestureDetector(baseContext, listener)
+        viewBinding.viewFinder.setOnTouchListener { _, event ->
+            scaleGestureDetector.onTouchEvent(event)
+            return@setOnTouchListener true
+        }
+//        viewBinding.viewFinder.setOnTouchListener(ttt)
     }
 
     override fun onDestroy() {
@@ -256,17 +299,7 @@ class CameraActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "CameraActivity"
-        fun getOutputDirectory(context: Context): File {
-            val appContext = context.applicationContext
-            val fileDir = context.externalCacheDirs.firstOrNull()?.let {
-                File(it, appContext.resources.getString(R.string.app_name)).apply { mkdirs() }
-            }
-            return if(fileDir != null && fileDir.exists()) {
-                fileDir
-            } else {
-                appContext.filesDir
-            }
-        }
+
 
         private val PERMISSIONS_REQUIRED = arrayOf(Manifest.permission.CAMERA, Manifest.permission.REQUEST_INSTALL_PACKAGES)
 

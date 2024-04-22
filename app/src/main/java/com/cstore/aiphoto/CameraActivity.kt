@@ -55,7 +55,7 @@ class CameraActivity : AppCompatActivity() {
         val fileDir = this.externalCacheDirs.firstOrNull()?.let {
             File(it, resources.getString(R.string.app_name)).apply { mkdirs() }
         }
-        return if(fileDir != null && fileDir.exists()) {
+        return if (fileDir != null && fileDir.exists()) {
             fileDir
         } else {
             this.filesDir
@@ -68,6 +68,8 @@ class CameraActivity : AppCompatActivity() {
         viewBinding = ActivityCameraBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
         val ip = intent.getStringExtra("ip") ?: "192.168.7.88"
+        val ipName = "当前链接:${intent.getStringExtra("ip_name") ?: ""}"
+        viewBinding.ipName.text = ipName
         vm = ViewModelProvider(this)[CameraViewModel::class.java]
         outputDirectory = getOutputDirectory()
         cameraExecutor = Executors.newSingleThreadExecutor()
@@ -76,12 +78,12 @@ class CameraActivity : AppCompatActivity() {
         }
         vm.mState.observe(this) {
             Log.e("Act", "State:${it}")
-            if("start" in it) {
+            if ("start" in it) {
                 val t = pickText + "拍照"
                 viewBinding.pickState.text = t
                 takePhoto(it)
-            } else if(it == "update") {
-                if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            } else if (it == "update") {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     installPermission()
                 } else {
                     FileUtil.installApk(DownloadUtil.apkFilePath, "com.cstore.aiphoto.fileprovider")
@@ -90,7 +92,7 @@ class CameraActivity : AppCompatActivity() {
         }
         vm.updateState.observe(this) {
             Log.e("Act", "Start Install APK!")
-            if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 installPermission()
             } else {
                 FileUtil.installApk(DownloadUtil.apkFilePath, "com.cstore.aiphoto.fileprovider")
@@ -100,7 +102,7 @@ class CameraActivity : AppCompatActivity() {
             viewBinding.sendState.text = it
         }
         vm.connState.observe(this) {
-            if(it) {
+            if (it) {
                 viewBinding.tryConn.visibility = View.GONE
             } else {
 //                viewBinding.tryConn.visibility = View.VISIBLE
@@ -118,7 +120,7 @@ class CameraActivity : AppCompatActivity() {
             try {
                 val msg = "已拍:${vm.picCount.value} 已上传:${vm.sendCount.value}"
                 viewBinding.countState.text = msg
-            } catch(_: Exception) {
+            } catch (_: Exception) {
 
             }
         }
@@ -126,22 +128,23 @@ class CameraActivity : AppCompatActivity() {
             try {
                 val msg = "已拍:${vm.picCount.value} 已上传:${vm.sendCount.value}"
                 viewBinding.countState.text = msg
-            } catch(_: Exception) {
+            } catch (_: Exception) {
 
             }
         }
         viewBinding.tryConn.setOnClickListener {
             vm.tryConn(ip)
         }
-        if(!hasPermissions(this)) {
-            val permLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-                if(it) { // Take the user to the success fragment when permission is granted
-                    Toast.makeText(this, "Permission request granted", Toast.LENGTH_LONG).show()
-                    vm.connectSocket(ip)
-                } else {
-                    Toast.makeText(this, "Permission request denied", Toast.LENGTH_LONG).show()
+        if (!hasPermissions(this)) {
+            val permLauncher =
+                registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+                    if (it) { // Take the user to the success fragment when permission is granted
+                        Toast.makeText(this, "Permission request granted", Toast.LENGTH_LONG).show()
+                        vm.connectSocket(ip)
+                    } else {
+                        Toast.makeText(this, "Permission request denied", Toast.LENGTH_LONG).show()
+                    }
                 }
-            }
             permLauncher.launch(Manifest.permission.CAMERA)
         } else {
             vm.connectSocket(ip)
@@ -149,9 +152,10 @@ class CameraActivity : AppCompatActivity() {
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
-    private val registLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        installPermission()
-    }
+    private val registLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            installPermission()
+        }
 
     //    @RequiresApi(Build.VERSION_CODES.O)
     private fun installPermission() {
@@ -174,14 +178,21 @@ class CameraActivity : AppCompatActivity() {
     }
 
     private fun getSelectLocation(): String {
-        return (viewBinding.radio.cb1.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb2.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb3.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb4.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb5.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb6.takeIf { it.isChecked }?.text ?: "").toString() + (viewBinding.radio.cb7.takeIf { it.isChecked }?.text ?: "").toString()
+        return (viewBinding.radio.cb1.takeIf { it.isChecked }?.text
+            ?: "").toString() + (viewBinding.radio.cb2.takeIf { it.isChecked }?.text
+            ?: "").toString() + (viewBinding.radio.cb3.takeIf { it.isChecked }?.text
+            ?: "").toString() + (viewBinding.radio.cb4.takeIf { it.isChecked }?.text
+            ?: "").toString() + (viewBinding.radio.cb5.takeIf { it.isChecked }?.text
+            ?: "").toString() + (viewBinding.radio.cb6.takeIf { it.isChecked }?.text
+            ?: "").toString() + (viewBinding.radio.cb7.takeIf { it.isChecked }?.text
+            ?: "").toString()
     }
 
     private val model = Build.MODEL
     fun getValue(data: List<String>, index: Int): String {
         return try {
             data[index]
-        } catch(e: Exception) {
+        } catch (e: Exception) {
             ""
         }
     }
@@ -197,34 +208,40 @@ class CameraActivity : AppCompatActivity() {
         val phoneTag = viewBinding.phoneTag.text.toString().takeIf { it.isNotEmpty() } ?: "Null"
         imageCapture?.let { imageCapture ->
             val fileName = "${phoneTag}_${model}_${
-                SimpleDateFormat("yyyyMMddHHmmssSSS", Locale.CHINA).format(System.currentTimeMillis())
+                SimpleDateFormat(
+                    "yyyyMMddHHmmssSSS",
+                    Locale.CHINA
+                ).format(System.currentTimeMillis())
             }_${
                 nextInt(10000, 99999)
             }_${getSelectLocation()}_${location}.jpg"
 
             val photoFile = File(outputDirectory, fileName)
             val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-            imageCapture.takePicture(outputOptions, cameraExecutor, object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    val saveUri = outputFileResults.savedUri ?: Uri.fromFile(photoFile)
-                    // 测试
+            imageCapture.takePicture(
+                outputOptions,
+                cameraExecutor,
+                object : ImageCapture.OnImageSavedCallback {
+                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                        val saveUri = outputFileResults.savedUri ?: Uri.fromFile(photoFile)
+                        // 测试
 //                    vm.sendFile(saveUri)
-                    vm.sendFile(saveUri, light, barcode, phoneTag, zp, group, tzid)
-                    val t = pickText + "等待"
-                    MainScope().launch {
-                        vm.picCount.postValue((vm.picCount.value ?: 0) + 1)
-                        viewBinding.pickState.text = t
+                        vm.sendFile(saveUri, light, barcode, phoneTag, zp, group, tzid)
+                        val t = pickText + "等待"
+                        MainScope().launch {
+                            vm.picCount.postValue((vm.picCount.value ?: 0) + 1)
+                            viewBinding.pickState.text = t
+                        }
                     }
-                }
 
-                override fun onError(exception: ImageCaptureException) {
-                    val t = pickText + "异常！:" + exception.toString()
-                    MainScope().launch {
-                        viewBinding.pickState.text = t
+                    override fun onError(exception: ImageCaptureException) {
+                        val t = pickText + "异常！:" + exception.toString()
+                        MainScope().launch {
+                            viewBinding.pickState.text = t
+                        }
                     }
-                }
 
-            })
+                })
         }
     }
 
@@ -246,13 +263,22 @@ class CameraActivity : AppCompatActivity() {
         preview = Preview.Builder().build().also {
             it.setSurfaceProvider(viewBinding.viewFinder.surfaceProvider)
         } // 效果：CAPTURE_MODE_MAXIMIZE_QUALITY   速度：CAPTURE_MODE_MINIMIZE_LATENCY
-        imageCapture = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY).build()
+        imageCapture =
+            ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                .build()
         try {
             cameraProvider?.also {
                 cameraProvider?.unbindAll()
-                val camera = if(extensionsManager.isExtensionAvailable(cameraSelector, ExtensionMode.AUTO)) {
+                val camera = if (extensionsManager.isExtensionAvailable(
+                        cameraSelector,
+                        ExtensionMode.AUTO
+                    )
+                ) {
                     Log.e("Camera", "自动最高")
-                    val bokehCameraSelector = extensionsManager.getExtensionEnabledCameraSelector(cameraSelector, ExtensionMode.AUTO)
+                    val bokehCameraSelector = extensionsManager.getExtensionEnabledCameraSelector(
+                        cameraSelector,
+                        ExtensionMode.AUTO
+                    )
                     it.bindToLifecycle(this, bokehCameraSelector, preview, imageCapture)
                 } else {
                     Log.e("Camera", "无法生效")
@@ -262,7 +288,7 @@ class CameraActivity : AppCompatActivity() {
                 val mCameraControl = camera.cameraControl
                 initCameraListener(mCameraInfo, mCameraControl)
             }
-        } catch(e: Exception) {
+        } catch (e: Exception) {
             Log.e(TAG, "Use case binding failed", e)
         }
     }
@@ -301,7 +327,11 @@ class CameraActivity : AppCompatActivity() {
         private const val TAG = "CameraActivity"
 
 
-        private val PERMISSIONS_REQUIRED = arrayOf(Manifest.permission.CAMERA, Manifest.permission.REQUEST_INSTALL_PACKAGES)
+        private val PERMISSIONS_REQUIRED = arrayOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.REQUEST_INSTALL_PACKAGES,
+            Manifest.permission.READ_PHONE_STATE
+        )
 
         fun hasPermissions(context: Context) = PERMISSIONS_REQUIRED.all {
             ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED

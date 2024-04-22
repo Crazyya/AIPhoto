@@ -15,25 +15,45 @@ import com.cstore.aiphoto.databinding.ActivityMainBinding
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var viewBinding: ActivityMainBinding
-    private val localText = arrayOf("五楼实验室", "四楼实验室", "五.五楼左", "五.五楼中", "五.五楼右", "开发测试")
+    private val localText = arrayOf(
+        "五楼实验室",
+        "四楼实验室",
+        "五.五楼左",
+        "五.五楼中",
+        "五.五楼右",
+        "开发测试",
+        "ZZY"
+    )
     private var local = "192.168.7.88"
+    private var ipName = "五楼实验室"
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         viewBinding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(viewBinding.root)
-        val adapter = ArrayAdapter(baseContext, com.google.android.material.R.layout.support_simple_spinner_dropdown_item, localText)
+        val adapter = ArrayAdapter(
+            baseContext,
+            com.google.android.material.R.layout.support_simple_spinner_dropdown_item,
+            localText
+        )
         viewBinding.ipSpinner.adapter = adapter
         viewBinding.ipSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                local = when(position) {
-                    0    -> "192.168.7.88"
-                    1    -> "192.168.0.223"
-                    2    -> "192.168.3.199"
-                    3    -> "192.168.3.192"
-                    4    -> "192.168.3.218"
-                    5    -> "192.168.3.213"
+            override fun onItemSelected(
+                parent: AdapterView<*>?,
+                view: View?,
+                position: Int,
+                id: Long
+            ) {
+                local = when (position) {
+                    0 -> "192.168.7.88"
+                    1 -> "192.168.0.223"
+                    2 -> "192.168.3.199"
+                    3 -> "192.168.3.192"
+                    4 -> "192.168.3.218"
+                    5 -> "192.168.3.213"
+                    6 -> "192.168.3.88"
                     else -> "192.168.3.88"
                 }
+                ipName = localText[position]
             }
 
             override fun onNothingSelected(parent: AdapterView<*>?) {
@@ -42,7 +62,11 @@ class MainActivity : AppCompatActivity() {
         viewBinding.btn.setOnClickListener {
             val intent = Intent(baseContext, CameraActivity::class.java)
             intent.putExtra("ip", local)
-            this.startActivity(intent, ActivityOptions.makeSceneTransitionAnimation(this).toBundle())
+            intent.putExtra("ip_name", ipName)
+            this.startActivity(
+                intent,
+                ActivityOptions.makeSceneTransitionAnimation(this).toBundle()
+            )
         }
     }
 }

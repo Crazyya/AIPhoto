@@ -10,6 +10,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Environment
 import android.util.Log
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -42,7 +43,12 @@ class DownloadUtil(private val succ: ((String) -> Unit), private val err: ((Stri
             Log.e("Download", "Download Done!")
             succ(file.absolutePath)
         }
-        MyApplication.instance().registerReceiver(completeReceiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
+        ContextCompat.registerReceiver(
+            MyApplication.instance(),
+            completeReceiver,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         var isDownload: Int
         do {
             delay(100)
